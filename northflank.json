@@ -1,0 +1,198 @@
+{
+  "apiVersion": "v1",
+  "spec": {
+    "kind": "Workflow",
+    "spec": {
+      "type": "sequential",
+      "steps": [
+        {
+          "kind": "Workflow",
+          "spec": {
+            "type": "parallel",
+            "steps": [
+              {
+                "kind": "BuildService",
+                "ref": "builder",
+                "spec": {
+                  "name": "builder",
+                  "tags": [],
+                  "billing": {
+                    "deploymentPlan": "nf-compute-20"
+                  },
+                  "vcsData": {
+                    "projectUrl": "https://github.com/northflank-examples/express-postgres-redis",
+                    "projectType": "github"
+                  },
+                  "buildSettings": {
+                    "dockerfile": {
+                      "buildEngine": "kaniko",
+                      "dockerFilePath": "/Dockerfile",
+                      "dockerWorkDir": "/"
+                    }
+                  },
+                  "buildConfiguration": {},
+                  "disabledCI": false,
+                  "buildArguments": {}
+                }
+              },
+              {
+                "kind": "Addon",
+                "spec": {
+                  "name": "production postgres",
+                  "type": "postgres",
+                  "version": "latest",
+                  "billing": {
+                    "deploymentPlan": "nf-compute-20",
+                    "storage": 4096,
+                    "replicas": 1,
+                    "storageClass": "ssd"
+                  },
+                  "tlsEnabled": true,
+                  "externalAccessEnabled": false,
+                  "ipPolicies": [],
+                  "pitrEnabled": false
+                }
+              },
+              {
+                "kind": "Addon",
+                "spec": {
+                  "name": "production redis",
+                  "type": "redis",
+                  "version": "latest",
+                  "billing": {
+                    "deploymentPlan": "nf-compute-20",
+                    "storageClass": "ssd",
+                    "storage": 4096,
+                    "replicas": 1
+                  },
+                  "tlsEnabled": true,
+                  "externalAccessEnabled": false,
+                  "ipPolicies": [],
+                  "pitrEnabled": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "Build",
+          "spec": {
+            "type": "service",
+            "id": "builder",
+            "branch": "main"
+          }
+        },
+        {
+          "kind": "DeploymentService",
+          "spec": {
+            "name": "production site",
+            "deployment": {
+              "instances": 1,
+              "internal": {
+                "id": "builder",
+                "branch": "main",
+                "buildSHA": "latest"
+              }
+            },
+            "billing": {
+              "deploymentPlan": "nf-compute-20"
+            },
+            "ports": [
+              {
+                "name": "p01",
+                "internalPort": 3000,
+                "public": true,
+                "protocol": "HTTP",
+                "security": {
+                  "credentials": [],
+                  "policies": []
+                },
+                "domains": [],
+                "disableNfDomain": false
+              }
+            ],
+            "runtimeEnvironment": {}
+          }
+        },
+        {
+          "kind": "SecretGroup",
+          "spec": {
+            "name": "production secrets",
+            "secretType": "environment-arguments",
+            "priority": 10,
+            "addonDependencies": [
+              {
+                "addonId": "production-postgres",
+                "keys": [
+                  {
+                    "keyName": "HOST",
+                    "aliases": [
+                      "DB_HOST"
+                    ]
+                  },
+                  {
+                    "keyName": "PORT",
+                    "aliases": [
+                      "DB_PORT"
+                    ]
+                  },
+                  {
+                    "keyName": "TLS_ENABLED",
+                    "aliases": [
+                      "DB_SSL"
+                    ]
+                  },
+                  {
+                    "keyName": "USERNAME",
+                    "aliases": [
+                      "DB_USERNAME"
+                    ]
+                  },
+                  {
+                    "keyName": "PASSWORD",
+                    "aliases": [
+                      "DB_PASSWORD"
+                    ]
+                  },
+                  {
+                    "keyName": "DATABASE",
+                    "aliases": [
+                      "DB_NAME"
+                    ]
+                  }
+                ]
+              },
+              {
+                "addonId": "production-redis",
+                "keys": [
+                  {
+                    "keyName": "REDIS_MASTER_URL",
+                    "aliases": [
+                      "REDIS_URI"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "restrictions": {
+              "restricted": true,
+              "nfObjects": [
+                {
+                  "id": "production-site",
+                  "type": "service"
+                }
+              ],
+              "tags": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  "name": "Postgres Redis Production",
+  "description": "",
+  "project": {
+    "id": "postgres-redis-previews"
+  },
+  "$schema": "https://api.northflank.com/v1/schemas/template"
+}
