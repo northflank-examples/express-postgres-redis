@@ -1,0 +1,175 @@
+{
+  "apiVersion": "v1",
+  "spec": {
+    "kind": "Workflow",
+    "spec": {
+      "type": "sequential",
+      "steps": [
+        {
+          "kind": "Workflow",
+          "spec": {
+            "type": "parallel",
+            "steps": [
+              {
+                "kind": "BuildSource",
+                "spec": {
+                  "type": "service",
+                  "id": "builder",
+                  "branch": "${refs.git-trigger.branch}",
+                  "sha": "${refs.git-trigger.sha}",
+                  "defaults": {
+                    "branch": "main"
+                  },
+                  "createNewBuild": false,
+                  "buildOverrides": {
+                    "buildArguments": {}
+                  }
+                },
+                "condition": "success",
+                "ref": "build"
+              },
+              {
+                "kind": "Addon",
+                "ref": "postgres",
+                "spec": {
+                  "name": "${args.previewId} postgres",
+                  "type": "postgres",
+                  "version": "latest",
+                  "billing": {
+                    "deploymentPlan": "nf-compute-20",
+                    "storage": 4096,
+                    "replicas": 1,
+                    "storageClass": "ssd"
+                  },
+                  "tlsEnabled": true,
+                  "externalAccessEnabled": false,
+                  "ipPolicies": [],
+                  "pitrEnabled": false
+                }
+              },
+              {
+                "kind": "Addon",
+                "ref": "redis",
+                "spec": {
+                  "name": "${args.previewId} redis",
+                  "type": "redis",
+                  "version": "latest",
+                  "billing": {
+                    "deploymentPlan": "nf-compute-20",
+                    "storageClass": "ssd",
+                    "storage": 4096,
+                    "replicas": 1
+                  },
+                  "tlsEnabled": true,
+                  "externalAccessEnabled": false,
+                  "ipPolicies": [],
+                  "pitrEnabled": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "SecretGroup",
+          "spec": {
+            "name": "${args.previewId} secrets",
+            "secretType": "environment-arguments",
+            "priority": 10,
+            "addonDependencies": [
+              {
+                "addonId": "${refs.postgres.id}",
+                "keys": [
+                  {
+                    "keyName": "HOST",
+                    "aliases": [
+                      "DB_HOST"
+                    ]
+                  },
+                  {
+                    "keyName": "PORT",
+                    "aliases": [
+                      "DB_PORT"
+                    ]
+                  },
+                  {
+                    "keyName": "TLS_ENABLED",
+                    "aliases": [
+                      "DB_SSL"
+                    ]
+                  },
+                  {
+                    "keyName": "USERNAME",
+                    "aliases": [
+                      "DB_USERNAME"
+                    ]
+                  },
+                  {
+                    "keyName": "PASSWORD",
+                    "aliases": [
+                      "DB_PASSWORD"
+                    ]
+                  },
+                  {
+                    "keyName": "DATABASE",
+                    "aliases": [
+                      "DB_NAME"
+                    ]
+                  }
+                ]
+              },
+              {
+                "addonId": "${refs.redis.id}",
+                "keys": [
+                  {
+                    "keyName": "REDIS_MASTER_URL",
+                    "aliases": [
+                      "REDIS_URI"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "restrictions": {
+              "restricted": true,
+              "nfObjects": [],
+              "tags": [
+                "${args.previewId}"
+              ]
+            }
+          }
+        },
+        {
+          "kind": "DeploymentService",
+          "spec": {
+            "name": "${args.previewId} site",
+            "deployment": {
+              "instances": 1,
+              "internal": {
+                "id": "builder",
+                "buildId": "${refs.build.id}"
+              }
+            },
+            "billing": {
+              "deploymentPlan": "nf-compute-20"
+            },
+            "ports": [
+              {
+                "name": "p01",
+                "internalPort": 3000,
+                "public": true,
+                "protocol": "HTTP",
+                "security": {
+                  "credentials": [],
+                  "policies": []
+                },
+                "domains": [],
+                "disableNfDomain": false
+              }
+            ],
+            "runtimeEnvironment": {}
+          }
+        }
+      ]
+    }
+  }
+}
